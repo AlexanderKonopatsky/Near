@@ -2,8 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as nearAPI from 'near-api-js';
 
-const contractName = 'neeeearrrr.testnet';
+const contractName = 'lottery023586921.near';
 const appKeyPrefix = 'near_app';
+
+function UserList({ users }) {
+  if (users.length === 0) {
+    return (
+      <div className="mt-8 bg-gray-700 rounded-2xl p-6 shadow-inner">
+        <h2 className="text-xl font-semibold mb-4 text-blue-400">User Balances</h2>
+        <p className="text-gray-300">No users data available.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-8 bg-gray-700 rounded-2xl p-6 shadow-inner">
+      <h2 className="text-xl font-semibold mb-4 text-blue-400">User Balances</h2>
+      <div className="max-h-60 overflow-y-auto">
+        {users.map((user, index) => (
+          <div key={index} className="flex justify-between items-center mb-2 py-2 border-b border-gray-600 last:border-b-0">
+            <span className="text-gray-300 truncate" style={{maxWidth: '60%'}}>{user.accountId}</span>
+            <span className="font-semibold text-green-400">{nearAPI.utils.format.formatNearAmount(user.balance, 4)} NEAR</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function NearDApp() {
   const [walletConnection, setWalletConnection] = useState(null);
@@ -14,31 +39,43 @@ export default function NearDApp() {
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [notification, setNotification] = useState({ message: '', isSuccess: true });
+  const [users, setUsers] = useState([]);
 
   useEffect(() => {
     initNear();
   }, []);
 
+  useEffect(() => {
+    if (contract) {
+      updateUsers();
+    }
+  }, [contract]);
+
+  useEffect(() => {
+    console.log("Users state updated:", users);
+  }, [users]);
+
   async function initNear() {
     try {
       const near = await nearAPI.connect({
-        networkId: 'testnet',
-        nodeUrl: 'https://rpc.testnet.near.org',
-        walletUrl: 'https://testnet.mynearwallet.com',
+        networkId: 'mainnet',
+        nodeUrl: 'https://rpc.mainnet.near.org',
+        walletUrl: 'https://app.mynearwallet.com/',
         deps: { keyStore: new nearAPI.keyStores.BrowserLocalStorageKeyStore() },
       });
-
+  
       const walletConnection = new nearAPI.WalletConnection(near, appKeyPrefix);
       setWalletConnection(walletConnection);
-
+  
       if (walletConnection.isSignedIn()) {
         const contract = new nearAPI.Contract(walletConnection.account(), contractName, {
-          viewMethods: ['getBalance', 'getTotalDeposits'],
+          viewMethods: ['getBalance', 'getTotalDeposits', 'getUsers'],
           changeMethods: ['deposit', 'withdraw'],
         });
         setContract(contract);
         setAccountId(walletConnection.getAccountId());
-        updateBalances(contract, walletConnection.getAccountId());
+        await updateBalances(contract, walletConnection.getAccountId());
+        await updateUsers();  // Добавьте эту строку
       }
     } catch (error) {
       console.error("Error initializing NEAR:", error);
@@ -50,11 +87,26 @@ export default function NearDApp() {
     try {
       const balance = await contract.getBalance({ accountId });
       setBalance(nearAPI.utils.format.formatNearAmount(balance, 4));
-
+  
       const totalDeposits = await contract.getTotalDeposits();
       setTotalDeposits(nearAPI.utils.format.formatNearAmount(totalDeposits, 4));
+  
+      // Добавьте небольшую задержку перед обновлением списка пользователей
+      setTimeout(updateUsers, 1000);
     } catch (error) {
       console.error("Error updating balances:", error);
+    }
+  }
+
+  async function updateUsers() {
+    if (contract) {
+      try {
+        const userList = await contract.getUsers();
+        console.log("User list received:", userList);
+        setUsers(userList.sort((a, b) => parseFloat(b.balance) - parseFloat(a.balance)));
+      } catch (error) {
+        console.error("Error fetching users:", error);
+      }
     }
   }
 
@@ -72,6 +124,7 @@ export default function NearDApp() {
       try {
         await contract.deposit({}, "300000000000000", nearAPI.utils.format.parseNearAmount(depositAmount));
         await updateBalances(contract, accountId);
+        await updateUsers();  // Добавьте эту строку
         showNotification(`Successfully deposited ${depositAmount} NEAR`, true);
         setDepositAmount('');
       } catch (error) {
@@ -86,6 +139,7 @@ export default function NearDApp() {
       try {
         await contract.withdraw({ amount: nearAPI.utils.format.parseNearAmount(withdrawAmount) });
         await updateBalances(contract, accountId);
+        await updateUsers();  // Добавьте эту строку
         showNotification(`Successfully withdrawn ${withdrawAmount} NEAR`, true);
         setWithdrawAmount('');
       } catch (error) {
@@ -172,11 +226,13 @@ export default function NearDApp() {
               </div>
             </div>
 
+            <UserList users={users} />
+
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={logout}
-              className="w-full bg-gray-700 text-gray-300 rounded-full py-2 px-4 font-semibold hover:bg-gray-600 transition duration-300"
+              className="w-full mt-8 bg-gray-700 text-gray-300 rounded-full py-2 px-4 font-semibold hover:bg-gray-600 transition duration-300"
             >
               Logout
             </motion.button>
